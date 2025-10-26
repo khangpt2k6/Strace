@@ -1,0 +1,26 @@
+{
+  "baseline_file": null,
+  "syscall_threshold": 0.15,
+  "time_threshold": 0.2,
+  "fail_on_new_syscalls": true,
+  "ignore_syscalls": [
+    "mmap",
+    "brk",
+    "rt_sigaction",
+    "mprotect",
+    "munmap",
+    "rt_sigprocmask"
+  ],
+  "max_reports": 100,
+  "database_path": "./traceguard.db",
+  "anomaly_detection": {
+    "enabled": true,
+    "z_score_threshold": 2.5,
+    "min_history": 5
+  },
+  "notifications": {
+    "enabled": false,
+    "slack_webhook": null,
+    "email": null
+  }
+}
