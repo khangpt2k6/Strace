@@ -1,0 +1,33 @@
+version: "3.8"
+
+services:
+  traceguard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: traceguard-dev
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./traceguard_data:/app/traceguard_data
+      - ./traces:/app/traces
+      - /var/run/docker.sock:/var/run/docker.sock
+    cap_add:
+      - SYS_PTRACE
+    environment:
+      PYTHONUNBUFFERED: 1
+    working_dir: /app
+
+  # Optional: TraceGuard Dashboard service
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: traceguard-dashboard
+    command: dashboard --host 0.0.0.0 --port 5000
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./traceguard_data:/app/traceguard_data
+    environment:
+      PYTHONUNBUFFERED: 1
