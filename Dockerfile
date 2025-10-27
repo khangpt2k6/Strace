@@ -13,8 +13,8 @@ WORKDIR /app
 # Copy source code
 COPY . .
 
-# Install TraceGuard
-RUN pip install --no-cache-dir -e .
+# Install TraceGuard and pytest
+RUN pip install --no-cache-dir -e . pytest
 
 # Create data directory
 RUN mkdir -p /app/traceguard_data /app/traces
