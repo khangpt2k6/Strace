@@ -1,0 +1,132 @@
+// Jenkins Pipeline for TraceGuard
+pipeline {
+    agent {
+        docker {
+            image 'python:3.11-slim'
+            args '-v /var/run/docker.sock:/var/run/docker.sock --cap-add SYS_PTRACE'
+        }
+    }
+    
+    environment {
+        TRACE_DIR = "${WORKSPACE}/traces"
+        BUILD_ID = "${BUILD_NUMBER}"
+        GIT_COMMIT = "${GIT_COMMIT}"
+        GIT_BRANCH = "${GIT_BRANCH}"
+    }
+    
+    stages {
+        stage('Setup') {
+            steps {
+                script {
+                    // Install dependencies
+                    sh '''
+                        apt-get update
+                        apt-get install -y strace git
+                        pip install -e .
+                    '''
+                    
+                    // Create trace directory
+                    sh 'mkdir -p ${TRACE_DIR}'
+                }
+            }
+        }
+        
+        stage('Capture Trace') {
+            steps {
+                script {
+                    // Run tests with strace
+                    sh '''
+                        traceguard capture \\
+                            --command "python -m pytest tests/ -v" \\
+                            --output ${TRACE_DIR}/current.json \\
+                            --label "build_${BUILD_ID}" \\
+                            --git-commit "${GIT_COMMIT}" \\
+                            --git-branch "${GIT_BRANCH}" \\
+                            --build-id "${BUILD_ID}"
+                    '''
+                }
+            }
+        }
+        
+        stage('Compare Baseline') {
+            steps {
+                script {
+                    // Get or create baseline
+                    sh '''
+                        if [ -f "${TRACE_DIR}/baseline.json" ]; then
+                            echo "Using existing baseline"
+                        else
+                            echo "Creating baseline from current run"
+                            traceguard save-baseline \\
+                                --trace ${TRACE_DIR}/current.json \\
+                                --save-as baseline
+                        fi
+                    '''
+                    
+                    // Compare (fail if regression)
+                    sh '''
+                        traceguard compare \\
+                            --baseline ${TRACE_DIR}/baseline.json \\
+                            --current ${TRACE_DIR}/current.json \\
+                            --output ${TRACE_DIR}/comparison.json \\
+                            --fail || true
+                    '''
+                }
+            }
+        }
+        
+        stage('Analyze') {
+            steps {
+                script {
+                    sh '''
+                        traceguard analyze \\
+                            --trace ${TRACE_DIR}/current.json \\
+                            --output ${TRACE_DIR}/analysis.json
+                    '''
+                }
+            }
+        }
+        
+        stage('Detect Anomalies') {
+            steps {
+                script {
+                    sh '''
+                        traceguard detect-anomalies \\
+                            --trace ${TRACE_DIR}/current.json \\
+                            --history-dir ${TRACE_DIR} \\
+                            --min-history 5 || true
+                    '''
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            // Archive traces
+            archiveArtifacts artifacts: 'traces/**', allowEmptyArchive: true
+            
+            // Publish results
+            script {
+                if (fileExists('traces/comparison.json')) {
+                    def comparison = readJSON file: 'traces/comparison.json'
+                    
+                    if (comparison.is_regression) {
+                        echo "⚠️ Regression detected: ${comparison.severity}"
+                        unstable("TraceGuard regression detected")
+                    } else {
+                        echo "✅ No regressions detected"
+                    }
+                }
+            }
+        }
+        
+        failure {
+            echo '❌ Failed'
+        }
+        
+        success {
+            echo '✅ Successful'
+        }
+    }
+}
